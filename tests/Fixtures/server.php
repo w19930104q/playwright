@@ -62,6 +62,38 @@ if (1 === preg_match('#^/api/status/(\d{3})$#', $uri, $matches)) {
     return true;
 }
 
+// Download fixtures for the captureDownloads tests.
+//
+// /download/broken announces a large attachment but closes after a few
+// bytes, so the browser starts the download and then fails it.
+if ('/download/broken' === $uri) {
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="broken.bin"');
+    header('Content-Length: 1048576');
+    echo str_repeat('x', 128);
+
+    return true;
+}
+
+// /download/hang starts an attachment and then stalls, so the download
+// stays in flight longer than any capture timeout.
+if ('/download/hang' === $uri) {
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="hang.bin"');
+    header('Content-Length: 1048576');
+    // Tell tests the browser is mid-download, then drip bytes so the
+    // download stays in flight. The script ends as soon as the client
+    // goes away (a capture timeout cancels the download).
+    @file_put_contents(sys_get_temp_dir().'/pw-php-download-hang-started', (string) time());
+    for ($i = 0; $i < 200; ++$i) {
+        echo 'x';
+        flush();
+        usleep(100_000);
+    }
+
+    return true;
+}
+
 // Default to index.html if root
 if ('/' === $uri) {
     $uri = '/index.html';

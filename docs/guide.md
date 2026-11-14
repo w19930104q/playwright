@@ -6,4 +6,5 @@
 - [Handling Authentication](./guide/handling-authentication.md)
 - [Testing with PHPUnit](./guide/testing-with-phpunit.md)
 - [Assertions Reference](./guide/assertions-reference.md)
+- [Capturing Downloads](./guide/downloads.md)
 - [Advanced Recipes](./guide/advanced-recipes.md)

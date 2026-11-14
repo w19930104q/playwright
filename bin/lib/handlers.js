@@ -1,6 +1,7 @@
 const { logger, ErrorHandler, CommandRegistry, BaseHandler, PromiseUtils, FrameUtils, RouteUtils } = require('./core');
 const { globalCoordinator } = require('./coordination');
 const { PopupCoordinator } = require('./popup-coordinator');
+const { DownloadCoordinator } = require('./download-coordinator');
 
 // Runs Playwright's own toHaveScreenshot machinery: the loop until two
 // consecutive screenshots match, masking, and the pixelmatch or ssim-cie94
@@ -445,6 +446,7 @@ class PageHandler extends BaseHandler {
       frames: () => this.getFrames(page),
       frame: () => this.getFrame(page, command),
       waitForPopup: () => this.waitForPopup(page, command),
+      captureDownloads: () => this.captureDownloads(page, command),
       bringToFront: () => page.bringToFront(),
       ariaSnapshot: () => PromiseUtils.wrapValue(page.ariaSnapshot(command.options)),
       hideHighlight: () => page.hideHighlight(),
@@ -773,6 +775,59 @@ class PageHandler extends BaseHandler {
         requestId,
         error: error.message
       });
+      throw error;
+    }
+  }
+
+  async captureDownloads(page, command) {
+    const timeout = command.timeout ?? 30000;
+    const idleTimeout = command.idleTimeout ?? 1000;
+    const directory = command.directory;
+    const requestId = command.requestId || this.generateId('capture_req');
+
+    if (typeof directory !== 'string' || directory === '') {
+      throw new Error('captureDownloads requires a target directory');
+    }
+
+    logger.info('Starting download capture', {
+      pageId: command.pageId,
+      directory,
+      timeout,
+      idleTimeout,
+      requestId
+    });
+
+    const phases = DownloadCoordinator.createCapturePhases({
+      downloads: this.downloads,
+      generateId: this.generateId.bind(this)
+    });
+
+    globalCoordinator.registerAsyncCommand(requestId, phases);
+
+    try {
+      const result = await globalCoordinator.executeNextPhase(requestId, {
+        page,
+        pageId: command.pageId,
+        directory,
+        timeout,
+        idleTimeout,
+        requestId
+      });
+
+      if (result.type === 'callback') {
+        // PHP is running the action that triggers the downloads
+        logger.debug('Download capture waiting for callback', { requestId, callbackType: result.callbackType });
+        return result;
+      }
+
+      if (result.completed) {
+        return { downloads: result.result.downloads || [] };
+      }
+
+      return { downloads: [] };
+
+    } catch (error) {
+      logger.error('Download capture failed', { requestId, error: error.message });
       throw error;
     }
   }
@@ -1160,4 +1215,31 @@ class VideoHandler extends BaseHandler {
   }
 }
 
-module.exports = { APIRequestHandler, ContextHandler, PageHandler, LocatorHandler, InteractionHandler, FrameHandler, JSHandleHandler, SelectorsHandler, VideoHandler };
+class DownloadHandler extends BaseHandler {
+  async handle(command, method) {
+    const download = this.validateResource(this.downloads, command.downloadId, 'Download');
+
+    const registry = CommandRegistry.create({
+      cancel: () => download.cancel(),
+      delete: async () => {
+        await download.delete();
+        this.downloads.delete(command.downloadId);
+      },
+      failure: async () => ({ error: await download.failure() }),
+      path: async () => ({ path: await download.path() }),
+      saveAs: () => download.saveAs(command.path),
+      readStream: async () => {
+        const stream = await download.createReadStream();
+        if (!stream) return { stream: null };
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        return { stream: Buffer.concat(chunks).toString('base64') };
+      }
+    });
+
+    const result = await ErrorHandler.safeExecute(() => this.executeWithRegistry(registry, method), { method, downloadId: command.downloadId });
+    return this.wrapResult(result);
+  }
+}
+
+module.exports = { APIRequestHandler, ContextHandler, PageHandler, LocatorHandler, InteractionHandler, FrameHandler, JSHandleHandler, SelectorsHandler, VideoHandler, DownloadHandler };

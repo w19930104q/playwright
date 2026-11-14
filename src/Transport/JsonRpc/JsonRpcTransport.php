@@ -94,6 +94,7 @@ final class JsonRpcTransport implements TransportInterface
         'locator.waitFor',
         'locator.waitForFunction',
         'page.ariaSnapshot',
+        'page.captureDownloads',
         'page.dragAndDrop',
         'page.expectScreenshot',
         'page.goBack',
@@ -451,6 +452,7 @@ final class JsonRpcTransport implements TransportInterface
             'context.waitForPopup',
             'page.waitForDownload',
             'page.waitForFileChooser',
+            'page.captureDownloads',
         ], true);
     }
 

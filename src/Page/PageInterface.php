@@ -30,6 +30,7 @@ use Playwright\Locator\Options\GetByRoleOptions;
 use Playwright\Locator\Options\LocatorOptions;
 use Playwright\Network\RequestInterface;
 use Playwright\Network\ResponseInterface;
+use Playwright\Page\Options\CaptureDownloadsOptions;
 use Playwright\Page\Options\ClickOptions;
 use Playwright\Page\Options\DragAndDropOptions;
 use Playwright\Page\Options\EmulateMediaOptions;
@@ -397,6 +398,31 @@ interface PageInterface
      * @param array<string, mixed>|WaitForPopupOptions $options
      */
     public function waitForPopup(callable $action, array|WaitForPopupOptions $options = []): self;
+
+    /**
+     * Captures every download triggered by a single action.
+     *
+     * A download listener is installed before $action runs, so one click that
+     * starts several downloads collects all of them. Each download is awaited
+     * until it completes or fails, then saved into $directory: suggested
+     * filenames are sanitized, duplicates are disambiguated with a numeric
+     * suffix, and a file only appears in the directory once it is complete.
+     * On timeout, page close or cancellation, temporary files and the
+     * listener are removed; the caller's browser is never closed.
+     *
+     * Options:
+     *  - timeout (ms, default 30000): overall budget for the downloads to
+     *    finish once $action has run. Exceeded budget throws TimeoutException.
+     *  - idleTimeout (ms, default 1000): how long to wait for further
+     *    downloads to start before the capture is considered complete. An
+     *    action that triggers no download returns an empty list after this.
+     *
+     * @param callable():void                              $action
+     * @param array<string, mixed>|CaptureDownloadsOptions $options
+     *
+     * @return list<\Playwright\Download\CapturedDownload>
+     */
+    public function captureDownloads(callable $action, string $directory, array|CaptureDownloadsOptions $options = []): array;
 
     /**
      * @param string|callable                             $url

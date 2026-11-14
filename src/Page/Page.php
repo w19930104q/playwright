@@ -22,6 +22,8 @@ use Playwright\Configuration\PlaywrightConfig;
 use Playwright\Console\ConsoleMessage;
 use Playwright\Cookie;
 use Playwright\Dialog\Dialog;
+use Playwright\Download\CapturedDownload;
+use Playwright\Download\Download;
 use Playwright\Event\EventDispatcherInterface;
 use Playwright\Exception\NetworkException;
 use Playwright\Exception\PlaywrightException;
@@ -51,6 +53,7 @@ use Playwright\Network\Request;
 use Playwright\Network\Response;
 use Playwright\Network\ResponseInterface;
 use Playwright\Network\Route;
+use Playwright\Page\Options\CaptureDownloadsOptions;
 use Playwright\Page\Options\ClickOptions;
 use Playwright\Page\Options\DragAndDropOptions;
 use Playwright\Page\Options\EmulateMediaOptions;
@@ -1363,6 +1366,69 @@ final class Page implements PageInterface, EventDispatcherInterface
         }
 
         return $popup;
+    }
+
+    /**
+     * @param array<string, mixed>|CaptureDownloadsOptions $options
+     *
+     * @return list<CapturedDownload>
+     */
+    public function captureDownloads(callable $action, string $directory, array|CaptureDownloadsOptions $options = []): array
+    {
+        $options = CaptureDownloadsOptions::from($options)->toArray();
+        $timeout = $options['timeout'] ?? 30000;
+        $idleTimeout = $options['idleTimeout'] ?? 1000;
+        $requestId = uniqid('capture_', true);
+
+        if (method_exists($this->transport, 'storePendingCallback')) {
+            $this->transport->storePendingCallback($requestId, $action);
+        } else {
+            $action();
+        }
+
+        $response = $this->transport->send([
+            'action' => 'page.captureDownloads',
+            'pageId' => $this->pageId,
+            'directory' => $directory,
+            'timeout' => $timeout,
+            'idleTimeout' => $idleTimeout,
+            'requestId' => $requestId,
+        ]);
+
+        $captured = [];
+        $items = $response['downloads'] ?? [];
+        if (!is_array($items)) {
+            return $captured;
+        }
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $downloadId = $item['downloadId'] ?? null;
+            if (!is_string($downloadId) || '' === $downloadId) {
+                continue;
+            }
+
+            $download = new Download($this->transport, $this, $downloadId, [
+                'suggestedFilename' => is_string($item['suggestedFilename'] ?? null) ? $item['suggestedFilename'] : '',
+                'url' => is_string($item['url'] ?? null) ? $item['url'] : '',
+            ]);
+
+            $path = $item['path'] ?? null;
+            $status = $item['status'] ?? null;
+            $error = $item['error'] ?? null;
+
+            $captured[] = new CapturedDownload(
+                $download,
+                is_string($path) ? $path : null,
+                is_string($status) ? $status : CapturedDownload::STATUS_FAILED,
+                is_string($error) ? $error : null,
+            );
+        }
+
+        return $captured;
     }
 
     /**

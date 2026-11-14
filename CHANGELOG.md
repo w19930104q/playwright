@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- `PageInterface::captureDownloads()` collects every download triggered by a single action, waits for each to complete or fail, and saves finished files into a target directory with sanitized, deduplicated names
+
 ## [1.6.0] - 2026-11-07
 
 ### Added
